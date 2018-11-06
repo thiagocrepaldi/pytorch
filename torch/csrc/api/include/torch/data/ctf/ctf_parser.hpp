@@ -7,6 +7,7 @@
 #include <vector>
 #include <cassert>
 #include <iostream>
+#include <memory>
 #include <ostream>
 #include <stdint.h>
 
@@ -31,12 +32,11 @@
  * 500 |a 1 2 3 |b 100 200
  */
 
-/* General use string aprsing helpers */
+/* General use string parsing helpers */
 static const char SPACE_CHAR = ' ';
 static const char TAB_CHAR = '\t';
 static const char NAME_PREFIX = '|';
 static const char INDEX_DELIMITER = ':';
-static const char ROW_DELIMITER = '\n';
 static const char ESCAPE_SYMBOL = '#';
 
 inline bool isNamePrefix(const char &c)
@@ -99,11 +99,6 @@ inline bool isValueDelimiter(const char &c)
     return c == SPACE_CHAR || c == TAB_CHAR;
 }
 
-inline bool isColumnDelimiter(const char &c)
-{
-    return isValueDelimiter(c) || (isNonPrintable(c) && c != ROW_DELIMITER);
-}
-
 inline bool isEOL(const char &c)
 {
     return (c == '\r' || c == '\n');
@@ -114,7 +109,13 @@ inline bool isEscapeDelimiter(const char &c)
     return (c == '\'' || c == '"');
 }
 
-/* CTF Types */
+inline bool isColumnDelimiter(const char &c)
+{
+    return isValueDelimiter(c) || (isNonPrintable(c) && !isEOL(c));
+}
+
+/* CTF-specific types */
+
 enum CTFValueType
 {
     Unknown = 0x0,
@@ -134,21 +135,21 @@ struct CTFValue
 {
     explicit CTFValue() : type(CTFValueType::Unknown),
                           value(0),
-                          index(SIZE_MAX){}; // TODO: Kill copy assignment/copy constructor?
+                          index(SIZE_MAX){};
     explicit CTFValue(CTFValueType type, double value, size_t index = SIZE_MAX) : type(type),
                                                                                   value(value),
                                                                                   index(index) {}
 
     CTFValueType type;
-    size_t index;
     double value;
+    size_t index;
     bool operator==(const CTFValue &rhs) const;
 };
 
 struct CTFSample
 {
     explicit CTFSample() : input_name(std::string()),
-                           values(std::vector<CTFValue>()) {} // TODO: Kill copy assignment/copy constructor?
+                           values(std::vector<CTFValue>()) {}
     explicit CTFSample(std::string input_name) : input_name(input_name),
                                                  values(std::vector<CTFValue>()) {}
     explicit CTFSample(std::string input_name, std::vector<CTFValue> values) : input_name(input_name),
@@ -163,7 +164,7 @@ struct CTFSequence
 {
     explicit CTFSequence() : sequence_id(0),
                              samples(std::vector<CTFSample>()),
-                             comment(std::string()) {} // TODO: Kill copy assignment/copy constructor?
+                             comment(std::string()) {}
     explicit CTFSequence(CTFSequenceID sequence_id, std::string comment = std::string()) : sequence_id(sequence_id),
                                                                                            comment(comment) {}
     explicit CTFSequence(CTFSequenceID sequence_id, std::vector<CTFSample> samples, std::string comment = std::string()) : sequence_id(sequence_id),
@@ -177,13 +178,8 @@ struct CTFSequence
 
 struct CTFDataset
 {
-    explicit CTFDataset() : filename(std::string()),
-                            sequences(std::map<CTFSequenceID, CTFSequence>()) {} // TODO: Kill copy assignment/copy constructor?
-    explicit CTFDataset(std::string filename) : filename(filename),
-                                                sequences(std::map<CTFSequenceID, CTFSequence>()) {}
-    explicit CTFDataset(std::string filename, std::map<CTFSequenceID, CTFSequence> sequences) : filename(filename),
-                                                                                                sequences(sequences) {}
-    std::string filename;
+    explicit CTFDataset() : sequences(std::map<CTFSequenceID, CTFSequence>()) {}
+    explicit CTFDataset(std::map<CTFSequenceID, CTFSequence> sequences) : sequences(sequences) {}
     std::map<CTFSequenceID, CTFSequence> sequences;
     bool operator==(const CTFDataset &rhs) const;
 };
@@ -195,12 +191,11 @@ std::ostream &operator<<(std::ostream &os, const CTFDataset &ctf_dataset);
 
 class CTFParser
 {
-    // TODO: Use smart pointers
   public:
     explicit CTFParser(std::string filename);
     virtual ~CTFParser();
 
-    bool LoadSamples();
+    void LoadSamples();
     void PrintData() const;
     const CTFDataset &GetDataSet() const;
 
@@ -208,7 +203,7 @@ class CTFParser
     CTFParser() = delete;
     TH_DISALLOW_COPY_AND_ASSIGN(CTFParser);
 
-    bool GetSequenceId(CTFSequenceID &sequence_id, CTFSequenceID &previous_sequence_id);
+    bool GetSequenceId(CTFSequenceID &sequence_id);
     bool GetName(std::string &name);
     bool GetValue(CTFValue &value);
     bool GetComment(std::string &comment);
@@ -218,6 +213,6 @@ class CTFParser
     static const size_t buffer_size = 1024*1024; // buffer_size must be big enough to fit a really long line on the CTF file
     char *m_buffer; // buffer for temporarily holding a CTF line during parsing
     size_t m_buffer_pos; // parsing position of m_buffer
-    CTFDataset *m_dataset; // dataset holding all parsed entries
-    Reader *m_reader; // resposible for reading the CTF file
+    std::shared_ptr<CTFDataset> m_dataset; // dataset holding all parsed entries
+    std::shared_ptr<Reader> m_reader; // resposible for reading the CTF file
 };

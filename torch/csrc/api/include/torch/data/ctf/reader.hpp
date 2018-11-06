@@ -13,7 +13,7 @@ public:
 
   size_t ReadLine(char *(&buffer));
   size_t FileSize() const;
-  bool CanRead() const;
+  bool CanRead();
 
 private:
   std::string m_filename;

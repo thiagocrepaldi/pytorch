@@ -31,241 +31,221 @@
 CTFParser::CTFParser(std::string filename) : m_buffer_pos(0)
 {
     m_buffer = new char[CTFParser::buffer_size];
-    m_reader = new Reader(filename);
-    m_dataset = new CTFDataset(filename);
+    m_reader = std::make_shared<Reader>(filename);
+    m_dataset = std::make_shared<CTFDataset>();
 }
 
 CTFParser::~CTFParser()
 {
-    delete [] m_buffer;
-    delete m_reader;
-    delete m_dataset;
+    delete[] m_buffer;
 }
 
-bool CTFParser::GetSequenceId(CTFSequenceID &sequence_id, CTFSequenceID &previous_sequence_id)
+bool CTFParser::GetSequenceId(CTFSequenceID &sequence_id)
 {
-    // found sequence id string
-    std::string id_str;
-
-    // temporary index for iterating over the string buffer
-    size_t idx = m_buffer_pos;
-
-    // current char of the buffer
-    char c = m_buffer[idx];
-
-    // If sequence doesnt have Sequence ID, uses the Sequence ID from previous sequence
-    if (isNamePrefix(c))
-    {
-        sequence_id = previous_sequence_id;
-#ifdef CTF_DEBUG
-        std::cout << "Using previous Sequence ID (" << previous_sequence_id << ")" << std::endl;
-#endif
-        return true;
-    }
+    size_t runner = m_buffer_pos;
 
     // Sequence ID must start with a digit
-    if (!isDigit(c))
+    if (!isDigit(m_buffer[runner]))
     {
 #ifdef CTF_DEBUG
-        std::cout << "Not a Sequence ID (at " << idx << ")" << std::endl;
+        std::cout << "Not a Sequence ID at index " << runner << std::endl;
 #endif
         return false;
     }
 
     // Get all consecutive digits
-    while (isDigit(c))
+    while (isDigit(m_buffer[runner]))
     {
-        id_str += c;
-        c = m_buffer[++idx];
+        ++runner;
     }
+    // Store the final index of the sequence id string
+    size_t end_seq_id = runner;
 
     // Discard delimiters after the ID
-    while (isValueDelimiter(c))
+    while (isValueDelimiter(m_buffer[runner]))
     {
-        c = m_buffer[++idx];
+        ++runner;
     }
 
-    // After Sequence ID, there must be a Name Prefix
-    if (!isNamePrefix(c))
+    // After Sequence ID, there must be a '|'
+    if (!isNamePrefix(m_buffer[runner]))
     {
 #ifdef CTF_DEBUG
-        std::cerr << "Invalid CTF file. Missing name delimiter for one of the sequences (at " << idx << ")" << std::endl;
+        std::cerr << "Missing name delimiter for one of the sequences at index " << runner << std::endl;
 #endif
         return false;
     }
 
     // Convert string, update buffer state and return the integral ID
+    m_buffer_pos = runner;
+    m_buffer[end_seq_id] = '\0';
+    sequence_id = static_cast<CTFSequenceID>(std::stoull(m_buffer));
 #ifdef CTF_DEBUG
-    std::cout << "Found Sequence ID: [" << id_str << "] at [" << m_buffer_pos << "]" << std::endl;
+    std::cout << "Found Sequence ID '" << sequence_id << "' at index " << m_buffer_pos << std::endl;
 #endif
-    m_buffer_pos = idx;
-    sequence_id = static_cast<CTFSequenceID>(std::stoull(id_str));
-    previous_sequence_id = sequence_id;
     return true;
 }
 
 bool CTFParser::GetName(std::string &name)
 {
-    // found CTF nAME string
-    std::string name_str;
-
     // temporary index for iterating over the string buffer
-    size_t idx = m_buffer_pos;
-
-    // current char of the buffer
-    char c = m_buffer[idx];
+    size_t runner = m_buffer_pos;
+    size_t beg_name, end_name;
 
     // CTF Name must start with a |
-    if (!isNamePrefix(c))
+    if (!isNamePrefix(m_buffer[runner]))
     {
 #ifdef CTF_DEBUG
-        std::cout << "Not a CTF Name (at" << idx << ")" << std::endl;
+        std::cout << "Not a CTF Name at index " << runner << std::endl;
 #endif
         return false;
     }
-    c = m_buffer[++idx];
+    beg_name=++runner;
 
     // Get all consecutive digits and alpha characters
-    while (isDigit(c) || isAlpha(c))
+    while (isDigit(m_buffer[runner]) || isAlpha(m_buffer[runner]))
     {
-        name_str += c;
-        c = m_buffer[++idx];
+        ++runner;
     }
+    end_name = runner;
 
     // Discard delimiters after the CTF Name
-    while (isValueDelimiter(c))
+    while (isValueDelimiter(m_buffer[runner]))
     {
-        c = m_buffer[++idx];
+        ++runner;
     }
 
     // After CTF Name, there must be a CTF value
-    if (!isNumber(c))
+    if (!isNumber(m_buffer[runner]))
     {
 #ifdef CTF_DEBUG
-        std::cerr << "Invalid CTF file. Unexpected symbol after CTF Name (" << c << " at " << idx << ")" << std::endl;
+        std::cerr << "Unexpected symbol '" << m_buffer[runner] << "' after CTF Name at index " << runner << std::endl;
 #endif
         return false;
     }
 
     // Return the CTF Name
-    name = name_str;
+    name = std::string(m_buffer+beg_name, end_name-beg_name);
 #ifdef CTF_DEBUG
-    std::cout << "Found CTF Name: [" << name_str << "] at [" << m_buffer_pos << "]" << std::endl;
+    std::cout << "Found CTF Name '" << name << "' at index " << m_buffer_pos << std::endl;
 #endif
-    m_buffer_pos = idx;
+    m_buffer_pos = runner;
     return true;
 }
 
+// #if 0
 bool CTFParser::GetValue(CTFValue &value)
 {
-    // found CTF Value string
-    std::string value_str;
-    std::string index_str;
-
     // temporary index for iterating over the string buffer
-    size_t idx = m_buffer_pos;
+    size_t runner = m_buffer_pos;
 
-    // current char of the buffer
-    char c = m_buffer[idx];
+    size_t beg_index = SIZE_MAX, end_index = SIZE_MAX;
+    size_t beg_value = runner, end_value = runner;
 
     // CTF Value must start with a digit or signal
-    if (!isNumber(c))
+    if (!isNumber(m_buffer[runner]))
     {
 #ifdef CTF_DEBUG
-        std::cerr << "Not a CTF Value (" << c << " at " << m_buffer_pos << ")" << std::endl;
+        std::cerr << "Unexpected symbol '" << m_buffer[runner] << "' at index " << runner << std::endl;
 #endif
         return false;
     }
+    beg_value = runner;
 
     // Get all consecutive digits and decimal point, if any
     // TODO: Should support 1.23e-45 format?
     bool is_float = false;
     bool has_signal = false;
-    while (isNumber(c) || isSparseValueDelimiter(c))
+    while (isNumber(m_buffer[runner]) || isSparseValueDelimiter(m_buffer[runner]))
     {
-        if (isSign(c))
+        if (isSign(m_buffer[runner]))
         {
             if (has_signal)
             {
 #ifdef CTF_DEBUG
-                std::cerr << "Invalid CTF file. CTF value with more than one positive or negative signals (at " << idx << ")" << std::endl;
+                std::cerr << "Invalid CTF Value. CTF value with more than one positive or negative sign at index " << runner << std::endl;
 #endif
                 return false;
             }
             has_signal = true;
         }
-        if (isDecimalPoint(c))
+        if (isDecimalPoint(m_buffer[runner]))
         {
             if (is_float)
             {
 #ifdef CTF_DEBUG
-                std::cerr << "Invalid CTF file. CTF value with more than one decimal point (at " << idx << ")" << std::endl;
+                std::cerr << "Invalid CTF Value. CTF value with more than one decimal point at index " << runner << std::endl;
 #endif
                 return false;
             }
             is_float = true;
         }
-        if (isSparseValueDelimiter(c))
+        if (isSparseValueDelimiter(m_buffer[runner]))
         {
             // TODO: Look for decimal point on index? It will be truncated anyway
-            index_str = value_str;
-            value_str.clear();
+            beg_index = beg_value;
+            end_index = runner;
+            beg_value = end_index+1;
         }
-        else
-        {
-            value_str += c;
-        }
-        c = m_buffer[++idx];
+        ++runner;
     }
+    end_value = runner;
+    if (!isEOL(m_buffer[end_value])) {
+        m_buffer[runner++] = '\0';
+    }
+    end_value = runner;
 
     // Discard delimiters after the CTF Value
-    while (isValueDelimiter(c))
+    while (isValueDelimiter(m_buffer[runner]))
     {
-        c = m_buffer[++idx];
+        ++runner;
     }
 
     // After CTF Value, there must be another CTF Value or an optional CTF Comment
-    if (!isNumber(c) && !isCommentPrefix(c) && !isEOL(c))
+    if (!isNumber(m_buffer[runner]) && !isCommentPrefix(m_buffer[runner]) && !isEOL(m_buffer[runner]))
     {
 #ifdef CTF_DEBUG
-        std::cerr << "Invalid CTF file. Unexpected symbol (" << c << ") after CTF Value (at" << idx << ")" << std::endl;
+        std::cerr << "Unexpected symbol '" << m_buffer[runner] << "' after CTF Value at index " << runner << std::endl;
 #endif
         return false;
     }
 
     // Convert string, update buffer state and return the integral ID
     value.type = is_float ? CTFValueType::Double : CTFValueType::Int16;
-    value.value = is_float ? static_cast<double>(std::stod(value_str)) : static_cast<long long int>(std::stoll(value_str));
-    value.index = index_str.empty() ? SIZE_MAX : static_cast<CTFSequenceID>(std::stoull(index_str));
+    if (beg_index == SIZE_MAX) {
+        value.index = SIZE_MAX;
+    } else {
+        m_buffer[end_index] = '\0';
+        value.index = static_cast<CTFSequenceID>(std::stoull(m_buffer+beg_index));
+    }
+    value.value = is_float ? static_cast<double>(std::stod(m_buffer+beg_value)) : static_cast<long long int>(std::stoll(m_buffer+beg_value));
 #ifdef CTF_DEBUG
-    std::cout << "Found Value: Value [" << value_str << "] and index [" << index_str << "] at [" << m_buffer_pos << "]" << std::endl;
+    std::cout << "Found CTF Value '" << value.value << "', CTF Index '" << value.index << "'  and CTF Type '" << value.type << "' at index " << m_buffer_pos << std::endl;
 #endif
-    m_buffer_pos = idx;
+    m_buffer_pos = runner;
     return true;
 }
 
 bool CTFParser::GetValues(std::vector<CTFValue> &values)
 {
     std::vector<CTFValue> temp_values;
-    char c = m_buffer[m_buffer_pos];
-    while (!isNamePrefix(c) && !isCommentPrefix(c) && !isEOL(c) && (m_buffer_pos != m_reader->FileSize()))
+    while (!isNamePrefix(m_buffer[m_buffer_pos]) && !isCommentPrefix(m_buffer[m_buffer_pos]) && !isEOL(m_buffer[m_buffer_pos]) && (m_buffer_pos != m_reader->FileSize()))
     {
         CTFValue value;
         if (!GetValue(value))
         {
 #ifdef CTF_DEBUG
-            std::cerr << "Failed to get CTF Value (at " << m_buffer_pos << ")" << std::endl;
+            std::cerr << "Failed to get CTF Value at index " << m_buffer_pos << std::endl;
 #endif
             return false;
         }
         temp_values.push_back(value);
-        c = m_buffer[m_buffer_pos];
     }
 
     // Remove EOL
-    while (isEOL(c))
+    while (isEOL(m_buffer[m_buffer_pos]))
     {
-        c = m_buffer[++m_buffer_pos];
+        ++m_buffer_pos;
     }
 
     values.insert(values.end(), temp_values.begin(), temp_values.end());
@@ -281,90 +261,118 @@ bool CTFParser::GetSample(CTFSample &sample)
 bool CTFParser::GetComment(std::string &comment)
 {
     size_t quote_count = 0;
-    // found CTF Comment string
-    std::string comment_str;
 
     // temporary index for iterating over the string buffer
-    size_t idx = m_buffer_pos;
-
-    // current char of the buffer
-    char c = m_buffer[idx];
+    size_t runner = m_buffer_pos;
+    size_t beg_comment, end_comment;
 
     // CTF Comment must start with |#
-    if (!isCommentPrefix(c))
+    if (!isCommentPrefix(m_buffer[runner]))
     {
 #ifdef CTF_DEBUG
-        std::cout << "Not a CTF Comment (at " << idx << ")" << std::endl;
+        std::cout << "Not a CTF Comment at index " << runner << std::endl;
 #endif
         return false;
     }
-    c = m_buffer[++idx];
-    if (!isCommentSuffix(c))
+    ++runner;
+    if (!isCommentSuffix(m_buffer[runner]))
     {
 #ifdef CTF_DEBUG
-        std::cout << "Not a CTF Comment (at " << idx << ")" << std::endl;
+        std::cout << "Not a CTF Comment at index " << runner << std::endl;
 #endif
         return false;
     }
-    c = m_buffer[++idx];
+    beg_comment = ++runner;
     // Get all consecutive digits and alpha characters
-    while (!isEOL(c))
+    while (!isEOL(m_buffer[runner]))
     {
-        comment_str += c;
-        c = m_buffer[++idx];
+        ++runner;
 
-        if (isEscapeDelimiter(c))
+        if (isEscapeDelimiter(m_buffer[runner]))
         {
             ++quote_count;
         }
 
-        if (isNamePrefix(c) && (quote_count % 2 == 0))
+        if (isNamePrefix(m_buffer[runner]) && (quote_count % 2 == 0))
         {
             break;
         }
     }
+    end_comment = runner;
+    if (!isEOL(m_buffer[end_comment])) {
+        m_buffer[end_comment-1] = '\0';
+    }
 
     // Remove EOL
-    while (isEOL(c))
+    while (isEOL(m_buffer[runner]))
     {
-        c = m_buffer[++idx];
+        ++runner;
     }
 
     // Return the CTF Name
-    comment = comment_str;
+    comment = std::string(m_buffer+beg_comment, end_comment-beg_comment);
 #ifdef CTF_DEBUG
-    std::cout << "Found CTF Comment: [" << comment_str << "] at [" << m_buffer_pos << "]" << std::endl;
+    std::cout << "Found CTF Comment '" << comment << "' at index " << m_buffer_pos << std::endl;
 #endif
-    m_buffer_pos = idx;
+    m_buffer_pos = runner;
     return true;
 }
 
-bool CTFParser::LoadSamples()
+void CTFParser::LoadSamples()
 {
 #ifdef CTF_DEBUG
     size_t read_count = 0;
 #endif
+    CTFSequenceID sequence_id;
     CTFSequenceID previous_sequence_id = 0;
+    bool has_initial_sequence_id = false;
     while (m_reader->CanRead())
     {
-        m_reader->ReadLine(m_buffer);
-        m_buffer_pos = 0;
+        size_t len = m_reader->ReadLine(m_buffer);
 #ifdef CTF_DEBUG
-        std::cout << "Read count: " << ++read_count << std::endl;
+        std::cout << "Read file count: " << ++read_count << " (" << len << " bytes)" << std::endl;
 #endif
-        while (m_buffer_pos < std::strlen(m_buffer))
+        m_buffer_pos = 0;
+
+        // There can be an explicit sequence ID at the beginning of the line or the last known is used implicitly
+        if (!GetSequenceId(sequence_id))
         {
-            CTFComment comment;
-            CTFSequenceID sequence_id;
-            // There can be an explicit sequence ID at the beginning of the line or the last known is used implicitly
-            if (!GetSequenceId(sequence_id, previous_sequence_id))
+            if (has_initial_sequence_id)
             {
-                // Line doesn't start with a Sequence ID
+                sequence_id = previous_sequence_id;
+#ifdef CTF_DEBUG
+                std::cout << "Using previous Sequence ID (" << previous_sequence_id << ")" << std::endl;
+#endif
+            }
+            else
+            {
+                sequence_id = ++previous_sequence_id;
+#ifdef CTF_DEBUG
+                std::cout << "Incrementing previous Sequence ID (" << previous_sequence_id << ")" << std::endl;
+#endif
+            }
+        }
+        else
+        {
+            has_initial_sequence_id = true;
+        }
+        previous_sequence_id = sequence_id;
+
+        while (m_buffer_pos < len)
+        {
+            // After the sequence ID, there can be many samples/comments
+            CTFSample sample;
+            CTFComment comment;
+            if (!GetSample(sample))
+            {
                 if (!GetComment(comment))
                 {
-                    // Line doesn't start with a comment
+                    std::string error_msg("Invalid CTF File. Neither a CTF Value nor a CTF Comment was found at index " + m_buffer_pos);
+#ifdef CTF_DEBUG
+                    std::cout << error_msg << m_buffer_pos << std::endl;
+#endif
                     m_dataset->sequences.clear();
-                    return false;
+                    throw error_msg;
                 }
                 else
                 {
@@ -375,20 +383,6 @@ bool CTFParser::LoadSamples()
                     {
                         m_dataset->sequences[sequence_id].comment = comment;
                     }
-                }
-            }
-
-            // After the sequence ID, there can be many samples/comments
-            CTFSample sample;
-            if (!GetSample(sample))
-            {
-                if (!GetComment(comment))
-                {
-#ifdef CTF_DEBUG
-                    std::cout << "Neither a CTF Value nor a CTF Comment was found (at " << m_buffer_pos << "). Is it a bad CTF file?" << std::endl;
-#endif
-                    m_dataset->sequences.clear();
-                    return false;
                 }
             }
             // Initializes a new sequence on the dataset
@@ -405,8 +399,6 @@ bool CTFParser::LoadSamples()
             }
         }
     }
-
-    return true;
 }
 
 const CTFDataset &CTFParser::GetDataSet(void) const
@@ -484,13 +476,11 @@ std::ostream &operator<<(std::ostream &os, const CTFSequence &ctf_sequence)
 std::ostream &operator<<(std::ostream &os, const CTFDataset &ctf_dataset)
 {
 #ifdef CTF_DEBUG
-    os << "Filename: " << ctf_dataset.filename << std::endl;
     for (auto it = ctf_dataset.sequences.begin(); it != ctf_dataset.sequences.end(); ++it)
     {
         os << it->second;
     }
 #else
-    os << ctf_dataset.filename << std::endl;
     for (auto it = ctf_dataset.sequences.begin(); it != ctf_dataset.sequences.end(); ++it)
     {
         os << it->second << std::endl;
@@ -501,7 +491,6 @@ std::ostream &operator<<(std::ostream &os, const CTFDataset &ctf_dataset)
 
 void CTFParser::PrintData() const
 {
-    std::cout << m_dataset->filename << std::endl;
     for (auto sequence : m_dataset->sequences)
     {
         std::cout << sequence.second.sequence_id;

@@ -33,15 +33,17 @@ Reader::Reader(const std::string &filename) : m_filename(filename)
 size_t
 Reader::ReadLine(char *(&buffer))
 {
-    std::string line;
-    std::getline (m_file, line);
-    std::memset(buffer, 0, strlen(buffer)); // TODO: Should we assume buffer is clean already?
-    std::strncpy(buffer, line.c_str(), line.size());
-    if (!line.empty()) {
-        // Last line doesn't get a \n
-        buffer[line.size()] = '\n';
+    size_t len = 0;
+    while (m_file.get(buffer[len]))
+    {
+        if (buffer[len] == '\n' || buffer[len] == '\r' || buffer[len] == '\0') {
+            ++len;
+            break;
+        }
+        ++len;
     }
-    return (line.size()+1);
+    buffer[len]='\0';
+    return len;
 }
 
 size_t Reader::FileSize() const
@@ -49,7 +51,7 @@ size_t Reader::FileSize() const
     return m_file_size;
 }
 
-bool Reader::CanRead() const
+bool Reader::CanRead()
 {
-    return !m_file.eof();
+    return (!m_file.eof() && m_file.good() && m_file.tellg() != m_file_size);
 }

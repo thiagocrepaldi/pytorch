@@ -1,10 +1,12 @@
 #include <gtest/gtest.h>
 
 #include <torch/data.h>
+#include <torch/data/ctf/ctf_chunk_dataset.h>
 #include <torch/data/detail/sequencers.h>
 #include <torch/serialize.h>
 #include <torch/types.h>
 
+#include <test/cpp/api/data/ctf/samples/ctf_samples.h>
 #include <test/cpp/api/support.h>
 
 #include <c10/util/ArrayRef.h>
@@ -1382,4 +1384,170 @@ TEST(DataTest, DataLoaderWithChunkSupportMultiWorker) {
     count++;
   }
   ASSERT_EQ(result_sum, expected_sum);
+}
+
+/// ctf_sample_part_of_speech_tagging.ctf has 2 batches with 1 example each
+TEST(DataTest, CTFDataLoaderWithChunkSupportSingleWorkerSingleChunk) {
+  const size_t batch_size = 1;
+  const size_t total_workers = 1;
+  const size_t total_example = 2;
+  const size_t max_jobs = 2 * total_workers;
+  torch::data::ctf::CTFStreamDefinitions stream_defs;
+  stream_defs["features"].emplace_back(
+      "word", "word", 0, torch::data::ctf::CTFValueFormat::Sparse);
+  stream_defs["labels"].emplace_back(
+      "tag", "tag", 0, torch::data::ctf::CTFValueFormat::Sparse);
+  torch::data::ctf::CTFConfigHelper config(
+      std::string(
+          torch::data::ctf::CTF_SAMPLE_DIR +
+          "/ctf_sample_part_of_speech_tagging.ctf"),
+      stream_defs,
+      torch::data::ctf::CTFDataType(torch::data::ctf::CTFDataType::Double));
+
+  datasets::SharedBatchDataset<ctf::CTFChunkDataset<
+      double,
+      samplers::RandomSampler,
+      samplers::RandomSampler>>
+      shared_dataset = datasets::make_shared_dataset<ctf::CTFChunkDataset<
+          double,
+          samplers::RandomSampler,
+          samplers::RandomSampler>>(config);
+  auto data_loader = torch::data::make_chunk_data_loader(
+      shared_dataset,
+      DataLoaderOptions()
+          .batch_size(batch_size)
+          .chunk_loading(true)
+          .workers(total_workers)
+          .max_jobs(max_jobs));
+
+  shared_dataset->reset();
+  auto iterator = data_loader->begin();
+  size_t count_example = 0;
+  // TODO: Because current DataLoader can return empty batches,
+  // batch max_jobs to ensure chunk is fully read.
+  // Empty batches are ignored by the tests
+  for (size_t i = 0; i < max_jobs; ++i, ++iterator) {
+    std::vector<ctf::CTFExample<double>> batch = *iterator;
+    if (batch.size() != 0) {
+      count_example += batch.size();
+      ASSERT_EQ(batch.size(), batch_size);
+      ASSERT_EQ(batch[0].features[0].input_name, "word");
+      ASSERT_EQ(batch[0].labels[0].input_name, "tag");
+    }
+  }
+  ASSERT_EQ(total_example, count_example);
+}
+
+// ctf_sample_part_of_speech_tagging.ctf has a single batch with 2 examples
+TEST(
+    DataTest,
+    CTFDataLoaderWithChunkSupportSingleWorkerSingleChunkTwoExamplePerBatch) {
+  const size_t batch_size = 2;
+  const size_t total_example = 2;
+  const size_t total_worker = 1;
+  const size_t max_jobs = 2 * total_worker;
+  torch::data::ctf::CTFStreamDefinitions stream_defs;
+  stream_defs["features"].emplace_back(
+      "word", "word", 0, torch::data::ctf::CTFValueFormat::Sparse);
+  stream_defs["labels"].emplace_back(
+      "tag", "tag", 0, torch::data::ctf::CTFValueFormat::Sparse);
+  torch::data::ctf::CTFConfigHelper config(
+      std::string(
+          torch::data::ctf::CTF_SAMPLE_DIR +
+          "/ctf_sample_part_of_speech_tagging.ctf"),
+      stream_defs,
+      torch::data::ctf::CTFDataType(torch::data::ctf::CTFDataType::Double));
+
+  datasets::SharedBatchDataset<ctf::CTFChunkDataset<
+      double,
+      samplers::RandomSampler,
+      samplers::RandomSampler>>
+      shared_dataset = datasets::make_shared_dataset<ctf::CTFChunkDataset<
+          double,
+          samplers::RandomSampler,
+          samplers::RandomSampler>>(config);
+  auto data_loader = torch::data::make_chunk_data_loader(
+      shared_dataset,
+      DataLoaderOptions()
+          .workers(total_worker)
+          .max_jobs(max_jobs)
+          .batch_size(batch_size)
+          .chunk_loading(true));
+
+  shared_dataset->reset();
+  auto iterator = data_loader->begin();
+  size_t count_example = 0;
+  // TODO: Because current DataLoader can return empty batches,
+  // batch max_jobs to ensure chunk is fully read.
+  // Empty batches are ignored by the tests
+  for (size_t i = 0; i < max_jobs; ++i, ++iterator) {
+    std::vector<ctf::CTFExample<double>> batch = *iterator;
+    if (batch.size() != 0) {
+      ASSERT_EQ(batch.size(), batch_size);
+      ASSERT_EQ(batch[i].features[0].input_name, "word");
+      ASSERT_EQ(batch[i].labels[0].input_name, "tag");
+      count_example += batch.size();
+    }
+  }
+  ASSERT_EQ(total_example, count_example);
+}
+
+// ctf_sample_multiple_chunks_0000[0...6].ctf has 7 chunks with 3 batches each
+// (last chunk has 1 batch) and one example per batch
+TEST(DataTest, CTFDataLoaderWithChunkSupportMultipleWorkersMultipleChunks) {
+  const size_t batch_size = 3;
+  const size_t total_example = 7;
+  const size_t total_prefetch = 2;
+  const size_t total_worker = 10;
+  const size_t max_jobs = 2 * total_worker;
+
+  std::vector<torch::data::ctf::CTFConfigHelper> configs;
+  torch::data::ctf::CTFStreamDefinitions stream_defs;
+  stream_defs["features"].emplace_back(
+      "word", "word", 0, torch::data::ctf::CTFValueFormat::Sparse);
+  stream_defs["labels"].emplace_back(
+      "tag", "tag", 0, torch::data::ctf::CTFValueFormat::Sparse);
+
+  for (size_t i = 0; i < total_example; ++i) {
+    torch::data::ctf::CTFConfigHelper config(
+        std::string(
+            torch::data::ctf::CTF_SAMPLE_DIR +
+            "/ctf_sample_multiple_chunks_000" + std::to_string(i) + ".ctf"),
+        stream_defs,
+        torch::data::ctf::CTFDataType(torch::data::ctf::CTFDataType::Double));
+
+    configs.push_back(config);
+  }
+
+  datasets::SharedBatchDataset<ctf::CTFChunkDataset<
+      double,
+      samplers::RandomSampler,
+      samplers::RandomSampler>>
+      shared_dataset = datasets::make_shared_dataset<ctf::CTFChunkDataset<
+          double,
+          samplers::RandomSampler,
+          samplers::RandomSampler>>(configs, total_prefetch);
+  auto data_loader = torch::data::make_chunk_data_loader(
+      shared_dataset,
+      DataLoaderOptions()
+          .workers(total_worker)
+          .max_jobs(max_jobs)
+          .batch_size(batch_size)
+          .chunk_loading(true));
+
+  shared_dataset->reset();
+  auto iterator = data_loader->begin();
+  size_t count_example = 0;
+  // TODO: Because current DataLoader can return empty batches,
+  // batch max_jobs to ensure chunk is fully read.
+  // Empty batches are ignored by the tests
+  for (size_t i = 0; i < max_jobs; ++i, ++iterator) {
+    std::vector<ctf::CTFExample<double>> batch = *iterator;
+    count_example += batch.size();
+    for (size_t b = 0; b < batch.size(); ++b) {
+      ASSERT_EQ(batch[b].features[0].input_name, "word");
+      ASSERT_EQ(batch[b].labels[0].input_name, "tag");
+    }
+  }
+  ASSERT_EQ(total_example, count_example);
 }

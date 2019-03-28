@@ -10,7 +10,7 @@ import sys
 import os
 from torch._six import queue
 from . import collate, signal_handling, MP_STATUS_CHECK_INTERVAL, \
-    ExceptionWrapper, IS_WINDOWS
+    WorkerStopIteration, ExceptionWrapper, IS_WINDOWS
 
 if IS_WINDOWS:
     import ctypes
@@ -55,7 +55,7 @@ else:
             return not self.manager_dead
 
 
-def _worker_loop(dataset, index_queue, data_queue, done_event, collate_fn, seed, init_fn, worker_id):
+def _worker_loop(dataset, index_queue, data_queue, done_event, collate_fn, collate_fn_args, seed, init_fn, worker_id, chunk_dataset=False):
     # See NOTE [ Data Loader Multiprocessing Shutdown Logic ] for details on the
     # logic of this function.
 
@@ -79,7 +79,7 @@ def _worker_loop(dataset, index_queue, data_queue, done_event, collate_fn, seed,
 
         if init_fn is not None:
             try:
-                init_fn(worker_id)
+                init_fn(worker_id, dataset)
             except Exception:
                 init_exception = ExceptionWrapper(sys.exc_info())
 
@@ -105,7 +105,13 @@ def _worker_loop(dataset, index_queue, data_queue, done_event, collate_fn, seed,
                     samples = init_exception
                     init_exception = None
                 else:
-                    samples = collate_fn([dataset[i] for i in batch_indices])
+                    if not chunk_dataset:
+                        samples = collate_fn([dataset[i] for i in batch_indices], collate_fn_args)
+                    else:
+                        samples = dataset.get_batch()
+                        if samples is None:
+                            raise WorkerStopIteration(worker_id)
+                        samples = collate_fn(samples, collate_fn_args)
             except Exception:
                 # It is important that we don't store exc_info in a variable,
                 # see NOTE [ Python Traceback Reference Cycle Problem ]

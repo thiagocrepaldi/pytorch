@@ -14,6 +14,15 @@ import atexit
 
 IS_WINDOWS = sys.platform == "win32"
 
+class WorkerStopIteration(Exception):
+    r"""This is a special type of Exception used to coordinate dataloader
+    workers lifetime when Dataset doesn't have known size
+
+    When the worker is done, it raises an exception with its ID and the
+    main process catches and stop queueing new requests to this worker
+    """
+    def __init__(self, worker_id):
+        self.worker_id = worker_id
 
 # NOTE [ Python Traceback Reference Cycle Problem ]
 #
@@ -23,13 +32,13 @@ IS_WINDOWS = sys.platform == "win32"
 # and the frame (which holds reference to all the object in its temporary scope)
 # holding reference the traceback.
 
-
 class ExceptionWrapper(object):
     r"""Wraps an exception plus traceback to communicate across threads"""
     def __init__(self, exc_info):
         # It is important that we don't store exc_info, see
         # NOTE [ Python Traceback Reference Cycle Problem ]
         self.exc_type = exc_info[0]
+        self.exc_value = exc_info[1]
         self.exc_msg = "".join(traceback.format_exception(*exc_info))
 
 

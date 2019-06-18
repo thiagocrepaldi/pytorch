@@ -19,6 +19,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include <torch/csrc/api/include/torch/data/init.h>
 #include <torch/csrc/THP.h>
 #include <torch/csrc/DynamicTypes.h>
 #include <torch/csrc/Device.h>
@@ -658,6 +659,7 @@ PyObject* initModule() {
   // NOTE: We need to be able to access OperatorExportTypes from ONNX for use in
   // the export side of JIT, so this ONNX init needs to appear before the JIT
   // init.
+  torch::data::initDataBindings(module);
   torch::onnx::initONNXBindings(module);
   torch::jit::initJITBindings(module);
   torch::autograd::initNNFunctions(module);

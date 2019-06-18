@@ -282,12 +282,16 @@ struct ChunkDatasetOptions {
 /// while the `ExampleSampler` determins the order of Examples that are returned
 /// in each `get_batch` call. The hierarchical sampling approach used here is
 /// inspired by this paper http://martin.zinkevich.org/publications/nips2010.pdf
+class ChunkDatasetBase {
+ public:
+  virtual ~ChunkDatasetBase(){};
+};
 template <
     typename ChunkReader,
     typename ChunkSampler = samplers::RandomSampler,
     typename ExampleSampler = samplers::RandomSampler>
 class ChunkDataset final
-    : public StatefulDataset<
+    : public ChunkDatasetBase, public StatefulDataset<
           ChunkDataset<ChunkReader, ChunkSampler, ExampleSampler>,
           typename ChunkReader::BatchType,
           size_t> {

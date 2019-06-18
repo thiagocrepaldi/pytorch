@@ -6,6 +6,7 @@ in `./_utils/worker.py`.
 """
 
 import torch
+import torch.utils.data
 import torch.multiprocessing as multiprocessing
 from . import SequentialSampler, RandomSampler, BatchSampler
 from . import _utils
@@ -41,6 +42,7 @@ class DataLoader(object):
             loading. 0 means that the data will be loaded in the main process.
             (default: ``0``)
         collate_fn (callable, optional): merges a list of samples to form a mini-batch.
+        collate_fn_args (optional): parameters that can be used by collate_fn
         pin_memory (bool, optional): If ``True``, the data loader will copy tensors
             into CUDA pinned memory before returning them.  If your data elements
             are a custom type, or your ``collate_fn`` returns a batch that is a custom type
@@ -140,13 +142,14 @@ class DataLoader(object):
 
     def __init__(self, dataset, batch_size=1, shuffle=False, sampler=None,
                  batch_sampler=None, num_workers=0, collate_fn=default_collate,
-                 pin_memory=False, drop_last=False, timeout=0,
-                 worker_init_fn=None):
+                 collate_fn_args=None, pin_memory=False, drop_last=False,
+                 timeout=0, worker_init_fn=None):
         torch._C._log_api_usage_once("python.data_loader")
         self.dataset = dataset
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.collate_fn = collate_fn
+        self.collate_fn_args = collate_fn_args
         self.pin_memory = pin_memory
         self.drop_last = drop_last
         self.timeout = timeout
@@ -428,8 +431,10 @@ class _DataLoaderIter(object):
     def __init__(self, loader):
         self.dataset = loader.dataset
         self.collate_fn = loader.collate_fn
+        self.collate_fn_args = loader.collate_fn_args
         self.batch_sampler = loader.batch_sampler
         self.num_workers = loader.num_workers
+        self.inactive_workers = [False] * self.num_workers
         self.pin_memory = loader.pin_memory and torch.cuda.is_available()
         self.timeout = loader.timeout
 
@@ -458,8 +463,8 @@ class _DataLoaderIter(object):
                     target=_utils.worker._worker_loop,
                     args=(self.dataset, index_queue,
                           self.worker_result_queue, self.done_event,
-                          self.collate_fn, base_seed + i,
-                          self.worker_init_fn, i))
+                          self.collate_fn, self.collate_fn_args,
+                          base_seed + i, self.worker_init_fn, i))
                 w.daemon = True
                 # NB: Process.start() actually take some time as it needs to
                 #     start a process and pass the arguments over via a pipe.
@@ -558,7 +563,15 @@ class _DataLoaderIter(object):
     def __next__(self):
         if self.num_workers == 0:  # same-process loading
             indices = next(self.sample_iter)  # may raise StopIteration
-            batch = self.collate_fn([self.dataset[i] for i in indices])
+
+            if isinstance(self.dataset, torch.utils.data.Dataset):
+                batch = self.collate_fn([self.dataset[i] for i in indices], self.collate_fn_args)
+            elif isinstance(self.dataset, torch._C.data.ChunkDatasetBase):
+                batch = self.dataset.get_batch()
+                if batch is None:
+                    raise StopIteration
+                batch = self.collate_fn(batch, self.collate_fn_args)
+
             if self.pin_memory:
                 batch = _utils.pin_memory.pin_memory_batch(batch)
             return batch
@@ -594,6 +607,10 @@ class _DataLoaderIter(object):
             return
         self.index_queues[self.worker_queue_idx].put((self.send_idx, indices))
         self.worker_queue_idx = (self.worker_queue_idx + 1) % self.num_workers
+        while self.inactive_workers[self.worker_queue_idx]:
+            if False not in self.inactive_workers:
+                return
+            self.worker_queue_idx = (self.worker_queue_idx + 1) % self.num_workers
         self.batches_outstanding += 1
         self.send_idx += 1
 
@@ -605,6 +622,12 @@ class _DataLoaderIter(object):
             # a python bug https://bugs.python.org/issue2651
             if batch.exc_type == KeyError and "\n" in batch.exc_msg:
                 raise Exception("KeyError:" + batch.exc_msg)
+            elif isinstance(batch.exc_value, _utils.WorkerStopException):
+                worker_id = batch.exc_value.worker_id
+                self.inactive_workers[worker_id] = True
+                if False not in self.inactive_workers:
+                    raise StopIteration
+                return next(self)
             else:
                 raise batch.exc_type(batch.exc_msg)
         return batch

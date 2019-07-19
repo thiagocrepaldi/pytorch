@@ -251,6 +251,8 @@ def set_faulthander_if_available(_=None):
 set_faulthander_if_available()
 
 # Process `pid` must have called `set_faulthander_if_available`
+
+
 def print_traces_of_all_threads(pid):
     if HAS_FAULTHANDLER:
         if not IS_WINDOWS:
@@ -1645,7 +1647,6 @@ class TestIndividualWorkerQueue(TestCase):
         for batch_size in (8, 16, 32, 64):
             for num_workers in range(1, 6):
                 self._run_ind_worker_queue_test(batch_size=batch_size, num_workers=num_workers)
-
 
 if __name__ == '__main__':
     run_tests()

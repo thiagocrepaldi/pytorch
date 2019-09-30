@@ -271,8 +271,8 @@ static PyObject *THPStorage_(setFromFile)(THPStorage *self, PyObject *args)
   // the file descriptor is returned to original position and
   // the file handle at python call-site needs updating to the
   // advanced postion
-  const auto fd_current_pos = LSEEK(fd, 0, SEEK_CUR);
-  LSEEK(fd, fd_original_pos, SEEK_SET);
+  const auto fd_current_pos = lseek(fd, 0, SEEK_CUR);
+  lseek(fd, fd_original_pos, SEEK_SET);
   const auto seek_return = PyObject_CallMethod(file, "seek", "Li", (long long)fd_current_pos, 0);
   if (seek_return == nullptr) {
       return nullptr;

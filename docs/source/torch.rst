@@ -190,14 +190,12 @@ Pointwise Ops
 .. autofunction:: add
 .. autofunction:: addcdiv
 .. autofunction:: addcmul
-.. autofunction:: angle
 .. autofunction:: asin
 .. autofunction:: atan
 .. autofunction:: atan2
 .. autofunction:: bitwise_not
 .. autofunction:: ceil
 .. autofunction:: clamp
-.. autofunction:: conj
 .. autofunction:: cos
 .. autofunction:: cosh
 .. autofunction:: div
@@ -210,7 +208,6 @@ Pointwise Ops
 .. autofunction:: floor
 .. autofunction:: fmod
 .. autofunction:: frac
-.. autofunction:: imag
 .. autofunction:: lerp
 .. autofunction:: lgamma
 .. autofunction:: log
@@ -224,7 +221,6 @@ Pointwise Ops
 .. autofunction:: neg
 .. autofunction:: polygamma
 .. autofunction:: pow
-.. autofunction:: real
 .. autofunction:: reciprocal
 .. autofunction:: remainder
 .. autofunction:: round
@@ -367,6 +363,3 @@ BLAS and LAPACK Operations
 Utilities
 ----------------------------------
 .. autofunction:: compiled_with_cxx11_abi
-.. autofunction:: result_type
-.. autofunction:: can_cast
-.. autofunction:: promote_types

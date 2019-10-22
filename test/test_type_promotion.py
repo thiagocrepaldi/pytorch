@@ -351,6 +351,17 @@ class TestTypePromotion(TestCase):
         for dtype in torch.testing.get_all_dtypes():
             self.assertEqual(torch.promote_types(dtype, dtype), dtype)
 
+    def test_indexing(self):
+        a = torch.ones(5, 2, dtype=torch.double)
+        b = torch.zeros(5, dtype=torch.int)
+
+        # lambda cannot contain assignment
+        def f():
+            a[:, [1]] = b.unsqueeze(-1)
+        # https://github.com/pytorch/pytorch/issues/28010
+        self.assertRaisesRegex(RuntimeError, 'expected dtype',
+                               lambda: f())
+
 @unittest.skipIf(not torch.cuda.is_available(), "no cuda")
 class TestTypePromotionCuda(TestTypePromotion):
     def setUp(self):

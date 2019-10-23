@@ -352,8 +352,8 @@ def build_deps():
 ################################################################################
 
 
-if sys.version_info <= (3, 0):
-    install_requires += ['future']
+if sys.version_info <= (2, 7):
+    install_requires += ['future', 'typing']
 
 missing_pydep = '''
 Missing build dependency: Unable to `import {importname}`.

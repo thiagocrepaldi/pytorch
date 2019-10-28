@@ -1,6 +1,5 @@
 import math
 import torch
-from torch.utils.data.dataset import Dataset, IterableDataset
 from . import Sampler
 import torch.distributed as dist
 
@@ -46,7 +45,6 @@ class DistributedSampler(Sampler):
 
         self._dataset_length = length
         if not isinstance(length, int) or length <= 0:
-            assert not isinstance(dataset, IterableDataset), "`dataset` cannot be `IterableDataset` when `length` is not set"
             self._dataset_length = len(dataset)
 
         self.num_samples = int(math.ceil(self._dataset_length * 1.0 / self.num_replicas))
@@ -77,6 +75,16 @@ class DistributedSampler(Sampler):
 
     def __len__(self):
         return self.num_samples
+
+    def set_rank(self, rank):
+        r"""Sets current global worker rank
+
+        Typically used after new processes are spawned with a copy of this sampler
+        to prevent sampling the same indices in different workers
+        """
+        assert rank >= 0, 'rank must be >= 0'
+        assert rank < self.num_replicas, 'rank must < num_replicas'
+        self.rank = rank
 
     def set_epoch(self, epoch):
         self.epoch = epoch

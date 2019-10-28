@@ -4,7 +4,6 @@ import random
 
 from torch._utils import _accumulate
 from torch import randperm
-from torch.utils.data import DistributedSampler, ChunkDataReader, DistributedChunkSampler
 from torch.utils.data._utils.worker import get_worker_info
 
 
@@ -297,8 +296,6 @@ class ChunkDataset(IterableDataset):
 
     def __init__(self, chunk_sampler, chunk_reader, shuffle_cache=True):
         super(ChunkDataset, self).__init__()
-        assert isinstance(chunk_sampler, DistributedSampler) or isinstance(
-            chunk_sampler, DistributedChunkSampler), 'sampler must be a `DistributedSampler` or `DistributedChunkSampler`'
         assert callable(chunk_reader), 'chunk_reader must be `callable()` and return a container with data'
         assert isinstance(shuffle_cache, bool), 'shuffle_cache must be a `bool`'
 
